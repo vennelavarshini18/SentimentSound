@@ -3,23 +3,14 @@ import numpy as np
 import librosa
 import tensorflow as tf
 import pandas as pd
-import tensorflow_hub as hub
 import os
 import uuid
 
-model = tf.keras.models.load_model("model/best_model2.keras")
-label_classes = np.load("model/label_classes.npy")
+model = tf.keras.models.load_model("model/best_model22.keras")
+label_classes = np.load("model/label_classes2.npy")
 
-yamnet_model_handle = "https://tfhub.dev/google/yamnet/1"
-yamnet_model = hub.load(yamnet_model_handle)
-
-def extract_yamnet_features(file_path):
-    y, sr = librosa.load(file_path, sr=None)
-    if sr != 16000:
-        y = librosa.resample(y, orig_sr=sr, target_sr=16000)
-    waveform = tf.convert_to_tensor(y, dtype=tf.float32)
-    _, embeddings, _ = yamnet_model(waveform)
-    return embeddings.numpy().mean(axis=0)  
+FIXED_LENGTH = 16000  
+SAMPLE_RATE = 16000
 
 emotion_reactions = {
     "happy": [
@@ -54,17 +45,21 @@ emotion_reactions = {
     ]
 }
 
-st.set_page_config(page_title="🎙️ Emotion Detector", layout="centered")
-st.markdown(
-    "<h1 style='text-align: center;'>🎧 Speech Emotion Recognition App</h1>", unsafe_allow_html=True
-)
-st.markdown("Turn your voice into emotion insights using AI & Deep Learning")
+def extract_logmel_features(file_path):
+    y, sr = librosa.load(file_path, sr=SAMPLE_RATE, duration=1.0)
+    y = librosa.util.fix_length(y, size=FIXED_LENGTH)
+    mel = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=64, n_fft=1024, hop_length=256)
+    log_mel = librosa.power_to_db(mel)
+    return log_mel[np.newaxis, ..., np.newaxis]  
 
-with st.container():
-    st.markdown("### 🎵 Upload a WAV file to begin:")
-    uploaded_file = st.file_uploader(
-        "Upload your speech sample", type=["wav"], label_visibility="collapsed"
-    )
+st.set_page_config(page_title="🎙️ Emotion Detector", layout="centered")
+st.markdown("""
+    <h1 style='text-align: center;'>🎧 Speech Emotion Recognition App</h1>
+    <p style='text-align: center;'>Turn your voice into emotion insights using AI & Deep Learning</p>
+""", unsafe_allow_html=True)
+
+st.markdown("### 🎵 Upload a WAV file to begin:")
+uploaded_file = st.file_uploader("Upload your speech sample", type=["wav"], label_visibility="collapsed")
 
 if uploaded_file:
     try:
@@ -78,7 +73,7 @@ if uploaded_file:
 
         st.audio(audio_path, format="audio/wav")
 
-        features = extract_yamnet_features(audio_path).reshape(1, -1)
+        features = extract_logmel_features(audio_path)
         prediction = model.predict(features)
         emotion = label_classes[np.argmax(prediction)]
 
